@@ -18,7 +18,7 @@ Requires config file in one of (later overrides earlier):
 Config file format looks like:
 
 apikey 429769428649hkasjh<br/>
-endpoint https://rpc.gandi.net
+endpoint https://rpc.gandi.net/xmlrpc/
 
 
 == check-for-ds-seen ==
