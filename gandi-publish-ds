@@ -1,0 +1,89 @@
+#!/usr/bin/perl
+
+$|++;
+
+use strict;
+use XML::RPC;
+use Data::Dumper;
+use Net::DNS;
+
+my $config;
+my @configs = qw|/etc/gandi.conf /usr/local/etc/gandi.conf ~/.gandirc|;
+for(@configs) {
+	my $c = $_;
+	if(-f $c) {
+		if(open(C, $c)) {
+			print "Loading config from $c\n";
+			while(<C>) {
+				next if m/^\s*#/;
+				if(m/^(.*?)\s+(.*?)$/) {
+					$config->{$1} = $2;
+				}
+			}
+			close C;
+		}
+	}
+}
+
+my $endpoint = $config->{'endpoint'} || die "no endpoint in config file\n";
+my $apikey = $config->{'apikey'} || die "no apikey in config file\n";
+
+my $input = <STDIN>;
+chomp(my($domain, undef, undef, undef, $flag, undef, $alg, $public_key) = split /\s+/, $input, 8);
+print "Domain: $domain\n";
+print "Flag: $flag\n";
+print "Alg: $alg\n";
+print "Key: $public_key\n"; 
+
+$domain =~ s/\.$//;
+
+my $rr = new Net::DNS::RR($input);
+my $keytag = $rr->keytag;
+print "Keytag: ".$keytag."\n";
+
+print "Connecting to Gandi API endpoint $endpoint\n";
+
+my $api = XML::RPC->new($endpoint);
+
+my $version = $api->call('version.info', $apikey);
+print "  Found API version: $version->{'api_version'}\n";
+
+my $domains = $api->call('domain.list', $apikey);
+#print "Domains: ".Dumper($domains)."\n";
+my $found_domain = 0;
+for(@$domains) {
+	if($_->{'fqdn'} eq $domain) {
+		print "Domain $domain located in Gandi account\nChecking existing DNSSEC keys...\n";
+		$found_domain++;
+	}
+}
+die "Didn't find $domain in account. Exiting.\n" unless $found_domain;
+
+my $keys = $api->call('domain.dnssec.list', $apikey, $domain);
+#print "Keys: ".Dumper($keys)."\n";
+
+my $found_key = 0;
+for(@$keys) {
+#	print "Found keytag $_->{'keytag'} with ID $_->{'id'} type $_->{'flags'}\n";
+	chomp(my $pk = $_->{'public_key'});
+	$pk =~ s/\s+//g;
+	if($_->{'keytag'} eq $keytag && $_->{'flags'} eq $flag && $pk eq $public_key) {
+		print "  Found existing matching key. No upload required.\n";
+		$found_key++;
+	}
+}
+
+if($found_domain && !$found_key) {
+	print "Domain $domain found on account, key not found, so key needs uploading...\n";
+	if(scalar(@$keys) >= 4) {
+		print "  Gandi has 4 key limit. Currently found ".scalar(@$keys)." keys\n";
+		exit 99;
+	}
+	my $params = {
+		'flags' => $flag,
+		'algorithm' => $alg,
+		'public_key' => $public_key
+	};
+	my $key_add = $api->call('domain.dnssec.create', $apikey, $domain, $params);
+	print Dumper($key_add)i."\n";
+}

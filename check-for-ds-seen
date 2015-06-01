@@ -1,0 +1,62 @@
+#!/bin/bash
+
+CONFIG=/etc/opendnssec/conf.xml
+if [ ! -f $CONFIG ]
+then
+	echo Either you don't have permission to open the config file, or it's somewhere other than $CONFIG
+	exit 99
+fi
+
+echo Looking for keys that are awaiting DS visibility
+ods-ksmutil key list -v 2>/dev/null|grep KSK|grep "waiting for ds-seen"|awk '{print $1 ":" $12}'|while read domain
+do
+	KEYTAG=$(echo ${domain##*:})
+	DOMAIN=$(echo ${domain%%:*})
+	TLD=$(echo ${DOMAIN##*.})
+	SEEN=0
+	NSCOUNT=0
+	echo Checking $DOMAIN for DS keytag $KEYTAG via TLD $TLD nameservers
+	dig +cd +short NS $TLD|while read NS
+	do
+		echo "  Checking NS $NS"
+		set $(dig +cd +short AAAA $NS;dig +cd +short A $NS)
+		for IP in $@
+		do	
+			if [ "$IP" == "" ]
+			then
+				echo Cannot locate TLD NS IP
+				exit 99
+			fi
+			echo "    Checking IP $IP"
+			NSCOUNT=$(expr $NSCOUNT + 1)
+			DIG=$(dig +short DS $DOMAIN @$IP|grep "^$KEYTAG ")
+			if [ $? == 0 ]
+			then
+				echo "      DS seen"
+				SEEN=$(expr $SEEN + 1)
+			else
+				echo "      DS NOT seen"
+				break 2
+			fi
+		done
+	done
+
+	if [ "$NS" == "$SEEN" ]
+	then
+		echo "  Updating OpenDNSSEC"
+			
+		echo /usr/bin/ods-ksmutil key ds-seen --zone $DOMAIN --keytag $KEYTAG
+		if [ $? == 0 ]
+		then
+			echo "    OpenDNSSEC updated"
+			/usr/bin/ods-ksmutil key list --zone $DOMAIN --keytag $KEYTAG
+			exit 0
+		else
+			echo "    OpenDNSSEC update FAILED"
+			exit 1
+		fi
+	else
+		echo "  DS still not seen"
+		exit 0
+	fi
+done

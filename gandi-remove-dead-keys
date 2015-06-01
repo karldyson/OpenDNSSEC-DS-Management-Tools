@@ -1,0 +1,48 @@
+#!/usr/bin/perl
+
+use strict;
+use XML::RPC;
+use Data::Dumper;
+
+my $config;
+my @configs = qw|/etc/gandi.conf /usr/local/etc/gandi.conf ~/.gandirc|;
+for(@configs) {
+        my $c = $_;
+        if(-f $c) {
+                if(open(C, $c)) {
+                        print "Loading config from $c\n";
+                        while(<C>) {
+                                next if m/^\s*#/;
+                                if(m/^(.*?)\s+(.*?)$/) {
+                                        $config->{$1} = $2;
+                                }
+                        }
+                        close C;
+                }
+        }
+}
+
+my $endpoint = $config->{'endpoint'} || die "no endpoint in config file\n";
+my $apikey = $config->{'apikey'} || die "no apikey in config file\n";
+
+my @output = `/usr/bin/ods-ksmutil key list -v 2>/dev/null|grep KSK|awk '{print \$1 ":" \$2 ":" \$3 ":" \$11}'`;
+for(@output) {
+	chomp;
+	my($domain,$flag,$state,$keytag) = split /:/, $_;
+	if($flag eq 'KSK' && $state eq 'dead') {
+		print "got $domain, $flag, $state, $keytag\n";
+		print "Removing $domain keytag $keytag\n";
+		my $api = XML::RPC->new($endpoint);
+		my $keys = $api->call('domain.dnssec.list', $apikey);
+		for(@$keys) {
+			if($_->{'keytag'} eq $keytag) {
+				my $key_id = $_->{'id'};
+				print "Located key id $key_id for $domain keytag $keytag\n";
+				# todo: check date; ensure it's old?
+				my $delete = $api->call('domain.dnssec.delete', $apikey, $key_id);
+				print Dumper($delete)."\n";
+				last;
+			}
+		}
+	}
+}
