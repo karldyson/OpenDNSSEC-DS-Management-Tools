@@ -45,7 +45,7 @@ do
 	then
 		echo "  Updating OpenDNSSEC"
 			
-		echo /usr/bin/ods-ksmutil key ds-seen --zone $DOMAIN --keytag $KEYTAG
+		/usr/bin/ods-ksmutil key ds-seen --zone $DOMAIN --keytag $KEYTAG
 		if [ $? == 0 ]
 		then
 			echo "    OpenDNSSEC updated"
