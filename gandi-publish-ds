@@ -85,5 +85,5 @@ if($found_domain && !$found_key) {
 		'public_key' => $public_key
 	};
 	my $key_add = $api->call('domain.dnssec.create', $apikey, $domain, $params);
-	print Dumper($key_add)i."\n";
+	print Dumper($key_add)."\n";
 }
