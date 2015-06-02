@@ -41,7 +41,7 @@ do
 		done
 	done
 
-	if [ "$NS" == "$SEEN" ]
+	if [ "$NSCOUNT" == "$SEEN" ]
 	then
 		echo "  Updating OpenDNSSEC"
 			
